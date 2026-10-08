@@ -397,9 +397,12 @@ describe("Chat Component", () => {
       fireEvent.click(submitQuestion);
     });
     await waitFor(() => {
+      expect(
+        screen.getByText(/Answers can't be saved at this time/i)
+      ).toBeInTheDocument();
       expect(consoleErrorMock).toHaveBeenCalledWith(
         "Error: while saving data",
-        "Mock response: Failed to save data"
+        expect.any(Error)
       );
     });
 

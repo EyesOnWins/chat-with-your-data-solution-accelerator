@@ -1158,6 +1158,62 @@ class TestConversationAzureByod:
     @patch(
         "backend.batch.utilities.helpers.config.config_helper.ConfigHelper.get_active_config_or_default"
     )
+    def test_streaming_without_data_skips_null_content_chunks(
+        self,
+        get_active_config_or_default_mock,
+        azure_openai_mock,
+        index_not_exists_mock,
+        client,
+    ):
+        """Null deltas are role or finish chunks and must not end the stream."""
+        get_active_config_or_default_mock.return_value.prompts.conversational_flow = (
+            "byod"
+        )
+        index_not_exists_mock.return_value = True
+        openai_client_mock = MagicMock()
+        azure_openai_mock.return_value = openai_client_mock
+
+        empty_chunk = MagicMock(
+            id="response.id",
+            model=AZURE_OPENAI_MODEL,
+            created=0,
+            object="response.object",
+        )
+        empty_chunk.choices[0].delta.content = None
+
+        content_chunk = MagicMock(
+            id="response.id",
+            model=AZURE_OPENAI_MODEL,
+            created=0,
+            object="response.object",
+        )
+        content_chunk.choices[0].delta.content = self.content
+
+        openai_client_mock.chat.completions.create.return_value = [
+            empty_chunk,
+            content_chunk,
+        ]
+
+        response = client.post(
+            "/api/conversation",
+            headers={"content-type": "application/json"},
+            json=self.body,
+        )
+
+        assert response.status_code == 200
+        data = str(response.data, "utf-8")
+        assert (
+            data
+            == '{"id": "response.id", "model": "mock-openai-model", "created": 0, "object": "response.object", "choices": [{"messages": [{"role": "assistant", "content": "mock content"}]}]}\n'
+        )
+
+    @patch(
+        "backend.batch.utilities.search.azure_search_handler.AzureSearchHelper._index_not_exists"
+    )
+    @patch("create_app.AzureOpenAI")
+    @patch(
+        "backend.batch.utilities.helpers.config.config_helper.ConfigHelper.get_active_config_or_default"
+    )
     @patch(
         "backend.batch.utilities.helpers.azure_blob_storage_client.generate_container_sas"
     )

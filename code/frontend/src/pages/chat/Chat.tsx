@@ -94,21 +94,15 @@ const Chat = () => {
     await historyUpdate(messages, convId)
       .then(async (res) => {
         if (!res.ok) {
-          let errorMessage = "Answers can't be saved at this time.";
-          let errorChatMsg: ChatMessage = {
+          const errorMessage = "Answers can't be saved at this time.";
+          const errorChatMsg: ChatMessage = {
             id: uuidv4(),
             role: ERROR,
             content: errorMessage,
             date: new Date().toISOString(),
           };
-          if (!messages) {
-            setAnswers([...messages, errorChatMsg]);
-            let err: Error = {
-              ...new Error(),
-              message: "Failure fetching current chat state.",
-            };
-            throw err;
-          }
+          setAnswers([...messages, errorChatMsg]);
+          throw new Error(errorMessage);
         }
         let responseJson = await res.json();
         if (isNewConversation && responseJson?.success) {
@@ -222,8 +216,6 @@ const Chat = () => {
         (a) => a !== abortController
       );
     }
-
-    return abortController.abort();
   };
   // Buffer to store recognized text
   let recognizedTextBuffer = "";
@@ -325,10 +317,11 @@ const Chat = () => {
         if (result) {
           setAssistantType(result.ai_assistant_type);
         }
-        setIsAssistantAPILoading(false);
         return result;
       } catch (error) {
         console.error("Error fetching assistant type:", error);
+      } finally {
+        setIsAssistantAPILoading(false);
       }
     };
     fetchAssistantType();
@@ -405,13 +398,13 @@ const Chat = () => {
   };
 
   const setMessagesByConvId = (id: string, messagesList: ChatMessage[]) => {
-    const tempHistory = [...chatHistory];
-    const matchedIndex = tempHistory.findIndex(
-      (obj) => String(obj.id) === String(id)
+    setChatHistory((prevHistory) =>
+      prevHistory.map((conv) =>
+        String(conv.id) === String(id)
+          ? { ...conv, messages: messagesList }
+          : conv
+      )
     );
-    if (matchedIndex > -1) {
-      tempHistory[matchedIndex].messages = messagesList;
-    }
   };
 
   const onSelectConversation = async (id: string) => {
@@ -493,13 +486,15 @@ const Chat = () => {
       if (Array.isArray(response)) {
         setChatHistory((prevData) => [...prevData, ...response]);
         if (response.length === OFFSET_INCREMENT) {
-          setOffset((offset) => (offset += OFFSET_INCREMENT));
+          setOffset((currentOffset) => currentOffset + OFFSET_INCREMENT);
           // Stopping offset increment if there were no records
         } else if (response.length < OFFSET_INCREMENT) {
           setHasMoreRecords(false);
         }
-      } else {
+      } else if (offset === 0) {
         setChatHistory([]);
+      } else {
+        setHasMoreRecords(false);
       }
       setFetchingChatHistory(false);
       return response;
