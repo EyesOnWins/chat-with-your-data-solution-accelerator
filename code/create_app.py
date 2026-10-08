@@ -48,22 +48,38 @@ def get_citations(citation_list):
     container_sas = blob_client.get_container_sas()
     citations_dict = {"citations": []}
     for citation in citation_list.get("citations"):
-        metadata = (
-            json.loads(citation["url"])
-            if isinstance(citation["url"], str)
-            else citation["url"]
-        )
+        if isinstance(citation["url"], str):
+            try:
+                metadata = json.loads(citation["url"])
+            except json.JSONDecodeError:
+                metadata = {
+                    "source": citation["url"],
+                    "id": citation.get("id", ""),
+                    "chunk_id": citation.get("chunk_id"),
+                    "chunk": citation.get("chunk"),
+                }
+        else:
+            metadata = citation["url"]
+        if not isinstance(metadata, dict):
+            metadata = {
+                "source": str(metadata),
+                "id": citation.get("id", ""),
+                "chunk_id": citation.get("chunk_id"),
+                "chunk": citation.get("chunk"),
+            }
         title = citation["title"]
         url = get_markdown_url(metadata["source"], title, container_sas)
+        raw_chunk_id = metadata.get("chunk_id")
+        if raw_chunk_id is not None:
+            digits = re.findall(r"\d+", str(raw_chunk_id))
+            chunk_id = digits[-1] if digits else metadata.get("chunk")
+        else:
+            chunk_id = metadata.get("chunk")
         citations_dict["citations"].append(
             {
                 "content": url + "\n\n\n" + citation["content"],
                 "id": metadata["id"],
-                "chunk_id": (
-                    re.findall(r"\d+", metadata["chunk_id"])[-1]
-                    if metadata["chunk_id"] is not None
-                    else metadata["chunk"]
-                ),
+                "chunk_id": chunk_id,
                 "title": title,
                 "filepath": title.split("/")[-1],
                 "url": url,
@@ -112,9 +128,13 @@ def stream_with_data(response: Stream[ChatCompletionChunk]):
     }
 
     for line in response:
-        choice = line.choices[0]
+        if not line.choices:
+            continue
 
-        if choice.model_extra["end_turn"]:
+        choice = line.choices[0]
+        model_extra = choice.model_extra or {}
+
+        if model_extra.get("end_turn"):
             response_obj["choices"][0]["messages"][1]["end_turn"] = True
             yield json.dumps(response_obj, ensure_ascii=False) + "\n"
             return
@@ -134,7 +154,7 @@ def stream_with_data(response: Stream[ChatCompletionChunk]):
                 ensure_ascii=False,
             )
         else:
-            response_obj["choices"][0]["messages"][1]["content"] += delta.content
+            response_obj["choices"][0]["messages"][1]["content"] += delta.content or ""
 
         yield json.dumps(response_obj, ensure_ascii=False) + "\n"
 
@@ -283,8 +303,10 @@ def stream_without_data(response: Stream[ChatCompletionChunk]):
 
         delta_text = line.choices[0].delta.content
 
+        # The first and last streaming chunks often have a null content delta
+        # (role-only or finish_reason). Ending the stream there drops the answer.
         if delta_text is None:
-            return
+            continue
 
         response_text += delta_text
 

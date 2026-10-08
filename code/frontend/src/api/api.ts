@@ -23,7 +23,11 @@ export async function callConversationApi(
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(JSON.stringify(errorData.error));
+    const message =
+      typeof errorData?.error === "string"
+        ? errorData.error
+        : "An error occurred. Please try again. If the problem persists, please contact the site administrator.";
+    throw new Error(message);
   }
 
   return response;
@@ -246,7 +250,7 @@ export const historyDelete = async (convId: string): Promise<Response> => {
 };
 
 export const historyDeleteAll = async (): Promise<Response> => {
-  const response = await fetch("api/history/delete_all", {
+  const response = await fetch("/api/history/delete_all", {
     method: "DELETE",
     body: JSON.stringify({}),
     headers: {

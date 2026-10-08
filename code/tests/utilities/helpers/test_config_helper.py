@@ -270,6 +270,23 @@ def test_get_default_config_when_not_in_azure(
     )
 
 
+def test_blob_read_failure_falls_back_to_default_config(
+    blob_client_mock: MagicMock,
+    env_helper_mock: MagicMock,
+):
+    # given
+    env_helper_mock.return_value.CONVERSATION_FLOW = "custom"
+    env_helper_mock.return_value.DATABASE_TYPE = "CosmosDB"
+    blob_client_mock.file_exists.side_effect = Exception("storage unavailable")
+
+    # when
+    config = ConfigHelper.get_active_config_or_default()
+
+    # then
+    assert isinstance(config, Config)
+    assert config.prompts.conversational_flow == "custom"
+
+
 def test_save_config_as_active(
     AzureBlobStorageClientMock: MagicMock,
     blob_client_mock: MagicMock,
